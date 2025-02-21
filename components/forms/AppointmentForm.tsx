@@ -7,8 +7,8 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Form } from "@/components/ui/form";
-import { createUser } from "@/lib/actions/patient.actions";
-import { UserFormValidation } from "@/lib/validations";
+
+import { getAppointmentSchema } from "@/lib/validations";
 
 import "react-phone-number-input/style.css";
 import CustomFormField, { FormFieldType } from "../CustomFormField";
@@ -16,58 +16,85 @@ import SubmitButton from "../SubmitButton";
 import { SelectItem } from "@/components/ui/select";
 import { Doctors } from "@/constants";
 import Image from "next/image";
+import { createAppointment } from "@/lib/actions/appointment.actions";
 
-interface Props {
+const AppointmentForm = ({
+  userId,
+  patientId,
+  type,
+}: {
   userId: string;
   patientId: string;
-  type: "create" | "cancel" | "schedule";
-}
-export const AppointmentForm = ({ userId, patientId, type }: Props) => {
+  type: "create" | "schedule" | "cancel";
+}) => {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
 
-  const form = useForm<z.infer<typeof UserFormValidation>>({
-    resolver: zodResolver(UserFormValidation),
+  const AppointmentFormValidation = getAppointmentSchema(type);
+
+  const form = useForm<z.infer<typeof AppointmentFormValidation>>({
+    resolver: zodResolver(AppointmentFormValidation),
     defaultValues: {
-      name: "",
-      email: "",
-      phone: "",
+      primaryPhysician: "",
+      schedule: new Date(),
+      reason: "",
+      note: "",
+      cancellationReason: "",
     },
   });
 
-  const onSubmit = async (values: z.infer<typeof UserFormValidation>) => {
+  async function onSubmit(values: z.infer<typeof AppointmentFormValidation>) {
     setIsLoading(true);
 
+    let status;
+    switch (type) {
+      case "schedule":
+        status = "scheduled";
+        break;
+      case "cancel":
+        status = "cancelled";
+        break;
+      default:
+        status = "pending";
+    }
+
     try {
-      const user = {
-        name: values.name,
-        email: values.email,
-        phone: values.phone,
-      };
+      if (type === "create" && patientId) {
+        const appointmentData = {
+          userId,
+          patient: patientId,
+          primaryPhysician: values.primaryPhysician,
+          schedule: new Date(values.schedule),
+          reason: values.reason!,
+          status: status as Status,
+          note: values.note,
+        };
+        const newAppointment = await createAppointment(appointmentData);
 
-      const newUser = await createUser(user);
-
-      if (newUser) {
-        router.push(`/patients/${newUser.$id}/register`);
+        if (newAppointment) {
+          form.reset();
+          router.push(
+            `/patients/${userId}/new-appointment/success?appointmentId=${newAppointment.$id}`
+          );
+        }
       }
     } catch (error) {
       console.log(error);
     }
-    setIsLoading(false);
-  };
+  }
+
   let buttonLabel;
   switch (type) {
-    case "create":
-      buttonLabel = "Create Appointment";
-      break;
     case "cancel":
       buttonLabel = "Cancel Appointment";
       break;
     case "schedule":
-      buttonLabel = "Reschedule Appointment";
-    default:
+      buttonLabel = "Schedule Appointment";
       break;
+    default:
+      buttonLabel = "Submit Appointment";
   }
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="flex-1 space-y-6">
@@ -86,8 +113,8 @@ export const AppointmentForm = ({ userId, patientId, type }: Props) => {
               label="Doctor"
               placeholder="Select a doctor"
             >
-              {Doctors.map((doctor, i) => (
-                <SelectItem key={doctor.name + i} value={doctor.name}>
+              {Doctors.map((doctor) => (
+                <SelectItem key={doctor.name} value={doctor.name}>
                   <div className="flex cursor-pointer items-center gap-2">
                     <Image
                       src={doctor.image}
@@ -105,7 +132,7 @@ export const AppointmentForm = ({ userId, patientId, type }: Props) => {
             <CustomFormField
               fieldType={FormFieldType.DATE_PICKER}
               control={form.control}
-              name="Scheduled "
+              name="Schedule "
               label="Expected Appointment Date"
               showTimeSelect
               dateFormat="MMMM d, yyyy - h:mm aa"
@@ -122,8 +149,8 @@ export const AppointmentForm = ({ userId, patientId, type }: Props) => {
               <CustomFormField
                 fieldType={FormFieldType.TEXTAREA}
                 control={form.control}
-                name="notes"
-                label="Notes"
+                name="note"
+                label="Note"
                 placeholder="Enter notes"
               />
             </div>
@@ -151,3 +178,4 @@ export const AppointmentForm = ({ userId, patientId, type }: Props) => {
     </Form>
   );
 };
+export default AppointmentForm;
